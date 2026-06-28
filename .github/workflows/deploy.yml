@@ -13,6 +13,14 @@ concurrency:
 jobs:
   verify-and-deploy:
     runs-on: ubuntu-latest
+    env:
+      ALIYUN_HOST: ${{ secrets.ALIYUN_HOST }}
+      ALIYUN_SSH_PORT: ${{ secrets.ALIYUN_SSH_PORT }}
+      ALIYUN_USER: ${{ secrets.ALIYUN_USER }}
+      ALIYUN_SSH_PRIVATE_KEY: ${{ secrets.ALIYUN_SSH_PRIVATE_KEY }}
+      SERVER_APP_DIR: ${{ secrets.SERVER_APP_DIR }}
+      SERVER_SYSTEMD_SERVICE: ${{ secrets.SERVER_SYSTEMD_SERVICE }}
+      SERVER_ENV_FILE: ${{ secrets.SERVER_ENV_FILE }}
 
     steps:
       - name: Checkout repository
@@ -37,43 +45,25 @@ jobs:
         run: npm run build
 
       - name: Prepare SSH key
-        env:
-          ALIYUN_SSH_PRIVATE_KEY: ${{ secrets.ALIYUN_SSH_PRIVATE_KEY }}
         run: |
           mkdir -p ~/.ssh
           printf '%s\n' "$ALIYUN_SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
           chmod 600 ~/.ssh/id_ed25519
 
       - name: Add Aliyun host to known_hosts
-        env:
-          ALIYUN_HOST: ${{ secrets.ALIYUN_HOST }}
-          ALIYUN_SSH_PORT: ${{ secrets.ALIYUN_SSH_PORT }}
         run: |
           ssh-keyscan -p "$ALIYUN_SSH_PORT" -H "$ALIYUN_HOST" >> ~/.ssh/known_hosts
 
       - name: Upload environment file
-        if: ${{ secrets.SERVER_ENV_FILE != '' }}
-        env:
-          SERVER_ENV_FILE: ${{ secrets.SERVER_ENV_FILE }}
-          ALIYUN_HOST: ${{ secrets.ALIYUN_HOST }}
-          ALIYUN_SSH_PORT: ${{ secrets.ALIYUN_SSH_PORT }}
-          ALIYUN_USER: ${{ secrets.ALIYUN_USER }}
-          SERVER_APP_DIR: ${{ secrets.SERVER_APP_DIR }}
+        if: ${{ env.SERVER_ENV_FILE != '' }}
         run: |
-          cat > .server.env <<'EOF'
-          $SERVER_ENV_FILE
-          EOF
+          printf '%s\n' "$SERVER_ENV_FILE" > .server.env
           scp -P "$ALIYUN_SSH_PORT" .server.env "$ALIYUN_USER@$ALIYUN_HOST:$SERVER_APP_DIR/.env"
           ssh -p "$ALIYUN_SSH_PORT" "$ALIYUN_USER@$ALIYUN_HOST" "chmod 600 '$SERVER_APP_DIR/.env'"
           rm -f .server.env
 
       - name: Deploy on server
         env:
-          ALIYUN_HOST: ${{ secrets.ALIYUN_HOST }}
-          ALIYUN_SSH_PORT: ${{ secrets.ALIYUN_SSH_PORT }}
-          ALIYUN_USER: ${{ secrets.ALIYUN_USER }}
-          SERVER_APP_DIR: ${{ secrets.SERVER_APP_DIR }}
-          SERVER_SYSTEMD_SERVICE: ${{ secrets.SERVER_SYSTEMD_SERVICE }}
           DEPLOY_BRANCH: ${{ github.ref_name }}
         run: |
           ssh -p "$ALIYUN_SSH_PORT" "$ALIYUN_USER@$ALIYUN_HOST" \
