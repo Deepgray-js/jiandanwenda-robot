@@ -1,5 +1,5 @@
 # GitHub Actions 极简自动部署
-
+# test  deploy
 当前项目已切换为极简部署方案：
 
 1. 本机提交代码并 `git push origin main`
