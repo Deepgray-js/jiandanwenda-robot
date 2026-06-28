@@ -1,0 +1,2 @@
+deploy ALL=NOPASSWD: /usr/bin/systemctl restart jiandanwenda
+deploy ALL=NOPASSWD: /usr/bin/systemctl status jiandanwenda

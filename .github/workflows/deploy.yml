@@ -1,0 +1,80 @@
+name: Deploy To Aliyun
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+concurrency:
+  group: production-deploy
+  cancel-in-progress: true
+
+jobs:
+  verify-and-deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run type check
+        run: npm run check
+
+      - name: Run tests
+        run: npm run test
+
+      - name: Run production build
+        run: npm run build
+
+      - name: Prepare SSH key
+        env:
+          ALIYUN_SSH_PRIVATE_KEY: ${{ secrets.ALIYUN_SSH_PRIVATE_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "$ALIYUN_SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+
+      - name: Add Aliyun host to known_hosts
+        env:
+          ALIYUN_HOST: ${{ secrets.ALIYUN_HOST }}
+          ALIYUN_SSH_PORT: ${{ secrets.ALIYUN_SSH_PORT }}
+        run: |
+          ssh-keyscan -p "$ALIYUN_SSH_PORT" -H "$ALIYUN_HOST" >> ~/.ssh/known_hosts
+
+      - name: Upload environment file
+        if: ${{ secrets.SERVER_ENV_FILE != '' }}
+        env:
+          SERVER_ENV_FILE: ${{ secrets.SERVER_ENV_FILE }}
+          ALIYUN_HOST: ${{ secrets.ALIYUN_HOST }}
+          ALIYUN_SSH_PORT: ${{ secrets.ALIYUN_SSH_PORT }}
+          ALIYUN_USER: ${{ secrets.ALIYUN_USER }}
+          SERVER_APP_DIR: ${{ secrets.SERVER_APP_DIR }}
+        run: |
+          cat > .server.env <<'EOF'
+          $SERVER_ENV_FILE
+          EOF
+          scp -P "$ALIYUN_SSH_PORT" .server.env "$ALIYUN_USER@$ALIYUN_HOST:$SERVER_APP_DIR/.env"
+          ssh -p "$ALIYUN_SSH_PORT" "$ALIYUN_USER@$ALIYUN_HOST" "chmod 600 '$SERVER_APP_DIR/.env'"
+          rm -f .server.env
+
+      - name: Deploy on server
+        env:
+          ALIYUN_HOST: ${{ secrets.ALIYUN_HOST }}
+          ALIYUN_SSH_PORT: ${{ secrets.ALIYUN_SSH_PORT }}
+          ALIYUN_USER: ${{ secrets.ALIYUN_USER }}
+          SERVER_APP_DIR: ${{ secrets.SERVER_APP_DIR }}
+          SERVER_SYSTEMD_SERVICE: ${{ secrets.SERVER_SYSTEMD_SERVICE }}
+          DEPLOY_BRANCH: ${{ github.ref_name }}
+        run: |
+          ssh -p "$ALIYUN_SSH_PORT" "$ALIYUN_USER@$ALIYUN_HOST" \
+            "APP_DIR='$SERVER_APP_DIR' SERVICE_NAME='$SERVER_SYSTEMD_SERVICE' BRANCH='$DEPLOY_BRANCH' bash '$SERVER_APP_DIR/deploy/linux/update-app.sh'"
