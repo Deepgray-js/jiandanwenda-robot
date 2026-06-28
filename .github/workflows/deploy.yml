@@ -11,60 +11,29 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  verify-and-deploy:
+  deploy:
     runs-on: ubuntu-latest
-    env:
-      ALIYUN_HOST: ${{ secrets.ALIYUN_HOST }}
-      ALIYUN_SSH_PORT: ${{ secrets.ALIYUN_SSH_PORT }}
-      ALIYUN_USER: ${{ secrets.ALIYUN_USER }}
-      ALIYUN_SSH_PRIVATE_KEY: ${{ secrets.ALIYUN_SSH_PRIVATE_KEY }}
-      SERVER_APP_DIR: ${{ secrets.SERVER_APP_DIR }}
-      SERVER_SYSTEMD_SERVICE: ${{ secrets.SERVER_SYSTEMD_SERVICE }}
-      SERVER_ENV_FILE: ${{ secrets.SERVER_ENV_FILE }}
 
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Run type check
-        run: npm run check
-
-      - name: Run tests
-        run: npm run test
-
-      - name: Run production build
-        run: npm run build
-
-      - name: Prepare SSH key
-        run: |
-          mkdir -p ~/.ssh
-          printf '%s\n' "$ALIYUN_SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
-          chmod 600 ~/.ssh/id_ed25519
-
-      - name: Add Aliyun host to known_hosts
-        run: |
-          ssh-keyscan -p "$ALIYUN_SSH_PORT" -H "$ALIYUN_HOST" >> ~/.ssh/known_hosts
-
-      - name: Upload environment file
-        if: ${{ env.SERVER_ENV_FILE != '' }}
-        run: |
-          printf '%s\n' "$SERVER_ENV_FILE" > .server.env
-          scp -P "$ALIYUN_SSH_PORT" .server.env "$ALIYUN_USER@$ALIYUN_HOST:$SERVER_APP_DIR/.env"
-          ssh -p "$ALIYUN_SSH_PORT" "$ALIYUN_USER@$ALIYUN_HOST" "chmod 600 '$SERVER_APP_DIR/.env'"
-          rm -f .server.env
-
       - name: Deploy on server
-        env:
-          DEPLOY_BRANCH: ${{ github.ref_name }}
-        run: |
-          ssh -p "$ALIYUN_SSH_PORT" "$ALIYUN_USER@$ALIYUN_HOST" \
-            "APP_DIR='$SERVER_APP_DIR' SERVICE_NAME='$SERVER_SYSTEMD_SERVICE' BRANCH='$DEPLOY_BRANCH' bash '$SERVER_APP_DIR/deploy/linux/update-app.sh'"
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.ALIYUN_HOST }}
+          port: ${{ secrets.ALIYUN_SSH_PORT }}
+          username: ${{ secrets.ALIYUN_USER }}
+          key: ${{ secrets.ALIYUN_SSH_PRIVATE_KEY }}
+          script_stop: true
+          script: |
+            set -e
+            cd "${{ secrets.SERVER_APP_DIR }}"
+            git fetch origin main
+            git checkout main
+            git pull --ff-only origin main
+            if [ -n "${{ secrets.SERVER_ENV_FILE }}" ]; then
+              printf '%s\n' '${{ secrets.SERVER_ENV_FILE }}' > .env
+              chmod 600 .env
+            fi
+            npm ci
+            npm run build
+            systemctl restart "${{ secrets.SERVER_SYSTEMD_SERVICE }}"
+            systemctl status "${{ secrets.SERVER_SYSTEMD_SERVICE }}" --no-pager

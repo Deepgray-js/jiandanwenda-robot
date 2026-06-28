@@ -85,7 +85,7 @@ NODE_ENV=production npm start
 - `deploy/linux/jiandanwenda.service`：systemd 示例
 - `deploy/linux/jiandanwenda.nginx.conf`：Nginx 示例
 - `docs/linux-production-deploy.md`：完整部署说明
-- `docs/github-actions-cicd.md`：GitHub Actions 自动部署说明
+- `docs/github-actions-cicd.md`：GitHub Actions 极简自动部署说明（`ssh-action + git pull`）
 
 如需部署到 Linux，请优先阅读：
 
